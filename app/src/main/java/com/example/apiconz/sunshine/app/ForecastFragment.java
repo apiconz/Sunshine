@@ -1,8 +1,11 @@
 package com.example.apiconz.sunshine.app;
 
+import android.content.Intent;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.support.v4.app.Fragment;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -14,7 +17,6 @@ import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.ListView;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import org.json.JSONException;
@@ -24,11 +26,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
-import java.net.URI;
 import java.net.URL;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
 
 /**
  * Created by Indra on 06/11/2014.
@@ -58,31 +57,50 @@ public class ForecastFragment extends Fragment {
 
         int id = item.getItemId();
         if (id == R.id.action_refresh) {
-            FetchWeatherTask weatherTask = new FetchWeatherTask();
-            weatherTask.execute("Lima,pe");
+            updateWeather();
+            return true;
+        }else if(id == R.id.action_preferred_location){
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            Uri uri = Uri.parse("geo:0,0").buildUpon().appendQueryParameter("q",getLocationFromPreferences()).build();
+            intent.setData(uri);
+            if(intent.resolveActivity(getActivity().getPackageManager()) != null){
+                startActivity(intent);
+            }
             return true;
         }
 
         return super.onOptionsItemSelected(item);
     }
 
+    private void updateWeather() {
+        FetchWeatherTask weatherTask = new FetchWeatherTask();
+        String locationKey = getLocationFromPreferences();
+
+//            weatherTask.execute("Lima,pe");
+        weatherTask.execute(locationKey);
+    }
+
+    private String getLocationFromPreferences() {
+        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(getActivity());
+        return preferences.getString(getString(R.string.pref_location_key), getString(R.string.pref_location_default));
+    }
+
+    private String getUnits(){
+        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(getActivity());
+        String units = preferences.getString(getString(R.string.pref_units_key), getString(R.string.pref_units_metric));
+        return units;
+    }
+
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
 
-        String[] data = {
-                "Today - Sunny - 88/63",
-                "Tomorrow - Foggy - 70/46",
-                "Weds - Cloudy - 72/63",
-                "Thurs - Rainy - 64/51",
-                "Fri - HELP TRAPPED IN WEATHERSTATION - 60/51",
-                "Sat - Sunny - 76/68",
-                "Sun - Sunny - 80/68"
-        };
-
-        List<String> weekForecast = new ArrayList<String>(Arrays.asList(data));
-
-       mForecastAdapter = new ArrayAdapter<String>(getActivity(), R.layout.list_item_forecast, R.id.list_item_forecast_textview, weekForecast);
+        mForecastAdapter =
+                new ArrayAdapter<String>(
+                        getActivity(),
+                        R.layout.list_item_forecast,
+                        R.id.list_item_forecast_textview,
+                        new ArrayList<String>());
         View rootView = inflater.inflate(R.layout.fragment_my, container, false);
 
         ListView lstView = (ListView) rootView.findViewById(R.id.listview_forecast);
@@ -92,11 +110,22 @@ public class ForecastFragment extends Fragment {
             public void onItemClick(AdapterView<?> adapterView, View view, int position, long l) {
                 String forecast = mForecastAdapter.getItem(position);
 
-                Toast toast = Toast.makeText(getActivity(), forecast,Toast.LENGTH_SHORT);
+                Intent intent = new Intent();
+                intent.setClass(getActivity(), DetailActivity.class);
+                intent.putExtra(Intent.EXTRA_TEXT, forecast);
+                startActivity(intent);
+
+                Toast toast = Toast.makeText(getActivity(), forecast, Toast.LENGTH_SHORT);
                 toast.show();
             }
         });
         return rootView;
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        updateWeather();
     }
 
     public class FetchWeatherTask extends AsyncTask<String, Void, String[]> {
@@ -118,7 +147,7 @@ public class ForecastFragment extends Fragment {
             String forecastJsonStr = null;
 
             String format = "json";
-            String units = "metric";
+           // String units = "metric";
             int numDays = 7;
 
             try {
@@ -131,15 +160,16 @@ public class ForecastFragment extends Fragment {
                 // Construct the URL for the OpenWeatherMap query
                 // Possible parameters are avaiable at OWM's forecast API page, at
                 // http://openweathermap.org/API#forecast
+                String locationKey = params[0];
                 Uri buildUri = Uri.parse(FORECAST_BASE_URL).buildUpon()
-                        .appendQueryParameter(QUERY_PARAM, params[0])
+                        .appendQueryParameter(QUERY_PARAM, locationKey)
                         .appendQueryParameter(FORMAT_PARAM, format)
-                        .appendQueryParameter(UNITS_PARAM, units)
+                        .appendQueryParameter(UNITS_PARAM, getUnits())
                         .appendQueryParameter(DAYS_PARAM, Integer.toString(numDays))
                         .build();
                 URL url = new URL(buildUri.toString());
 
-                Log.v(LOG_TAG, "Built URI " + buildUri.toString());
+                Log.i(LOG_TAG, "Built URI " + buildUri.toString());
 
                 // Create the request to OpenWeatherMap, and open the connection
                 urlConnection = (HttpURLConnection) url.openConnection();
@@ -192,7 +222,7 @@ public class ForecastFragment extends Fragment {
             try {
                 WeatherDataParser parser = new WeatherDataParser();
                 return parser.getWeatherDataFromJson(forecastJsonStr, numDays);
-            }catch (JSONException e){
+            } catch (JSONException e) {
                 Log.e(LOG_TAG, e.getMessage(), e);
                 e.printStackTrace();
             }
@@ -203,9 +233,9 @@ public class ForecastFragment extends Fragment {
         @Override
         protected void onPostExecute(String[] result) {
 
-            if(result != null){
+            if (result != null) {
                 mForecastAdapter.clear();
-                for(String dayForecastStr: result){
+                for (String dayForecastStr : result) {
                     mForecastAdapter.add(dayForecastStr);
                 }
             }
